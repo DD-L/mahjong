@@ -34,3 +34,5 @@ doc/notes/
 build/
 Engine.cpp
 .vscode/
+flush_src.tar.bz2.sh
+src.tar.bz2
