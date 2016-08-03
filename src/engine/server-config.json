@@ -1,0 +1,13 @@
+{
+    "EngineServer":
+    {
+        "bind_addr": "0.0.0.0",
+        "bind_port": 2222,
+        "zip_on": false,
+        "timeout": 90,
+        //"errfile": "/var/log/Engine/server.err",
+        "ping_interval": 10,
+        "event_io_thread": 4,
+        "acceptor_io_thread": 2
+    }
+}

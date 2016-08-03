@@ -14,6 +14,13 @@ namespace Engine {
 namespace Log {
 // function Engine::output_thread
 void output_thread(const sdata_t& errlog_filename = "");
+
+
+// 返回一个 basename(filename) 的临时对象
+static inline sdata_t basename(const sdata_t& filename) {
+    const std::size_t found = filename.find_last_of("/\\");
+    return filename.substr(found + 1);
+}
 } // namespace Engine::Log
 } // namespace Engine
 

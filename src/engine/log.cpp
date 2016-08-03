@@ -13,12 +13,6 @@
 namespace Engine {
 namespace Log {
 
-// 返回一个 basename(filename) 的临时对象
-static inline sdata_t basename(const sdata_t& filename) {
-    const std::size_t found = filename.find_last_of("/\\");
-    return filename.substr(found + 1);
-}
-
 // 日志输出格式化函数。
 // 因为在编译时使用的是全路径，所以宏 __FILE__ 得到的也是全路径, 所以有必要
 // 重新写个日志输出格式化函数，以替换默认的日志输出格式。

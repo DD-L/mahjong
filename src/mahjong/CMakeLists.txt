@@ -5,6 +5,8 @@ file (GLOB HEADERS
 add_executable (mahjong ${DIR_SRC} ${HEADERS})
 # make install -- build/bin
 install (TARGETS mahjong DESTINATION ${PROJECT_BINARY_DIR}/bin)
+file(COPY ${CMAKE_SOURCE_DIR}/src/engine/server-config.json 
+    DESTINATION ${PROJECT_BINARY_DIR}/bin)
 
 # gcc -l
 target_link_libraries ( mahjong 

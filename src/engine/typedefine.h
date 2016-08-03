@@ -18,8 +18,11 @@
 #include <map>
 #include <chrono>
 #include <thread>
+#include <mutex>
 #include <memory>
 #include <type_traits>
+#include <system_error>
+#include <algorithm>
 
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
@@ -90,22 +93,28 @@ static inline shared_data_type make_shared_data(void) {
  * @return 返回一个 sdata_t 的临时对象
  */
 template <typename DATA_TYPE, typename VTYPE, typename F = decltype(std::dec)>
-//std::ostringstream& _debug_format_data(const DATA_TYPE& data, VTYPE, 
-sdata_t _debug_format_data(const DATA_TYPE& data, VTYPE, 
+sdata_t _format_data(const DATA_TYPE& data, VTYPE, 
         char c = ' ', F f = std::dec) {
-#ifdef ENGINE_DEBUG
     std::ostringstream oss;
     //oss.flush();
     for (auto& v : data) {
         oss << f << VTYPE(v) << c;
     }
     return oss.str();
+}
+template <typename DATA_TYPE, typename VTYPE, typename F = decltype(std::dec)>
+//std::ostringstream& _debug_format_data(const DATA_TYPE& data, VTYPE, 
+sdata_t _debug_format_data(const DATA_TYPE& data, VTYPE, 
+        char c = ' ', F f = std::dec) {
+#ifdef ENGINE_DEBUG
+    return std::move(_format_data(data, VTYPE(), c, f));
 #endif
     return "";
 }
 
+
 /**
- * @brief get_vdata_from_packet: 将 'lss_pack' 里的数据 转换为 vdata_t 类型 
+ * @brief get_vdata_from_packet: 将 'packet' 里的数据 转换为 vdata_t 类型 
  * @param packet:
  *      'packet' 可以是下列类型的对象:
  *      Engine::Client::reply, Engine::Client::request, 
@@ -137,9 +146,27 @@ enum { max_length = 4096, length_handshake = 1024 };
 // 等价于下面, 但失去了与 int 的隐式转换特性
 //enum class readbuffer { max_length = 4096, length_handshake = 1024 };
 
+
+///////////////////////////////////////////////////
+// engine  Connection 的状态
+///////////////////////////////////////////////////
+namespace ConnetionStatus {
+    enum status_t : byte {
+        status_not_connected = 0x00,
+        status_connected     = 0x01,
+        status_hello         = 0x02,
+        status_auth          = 0x03,
+        status_data          = 0x04
+    };
+} // namespace Engine::Status
+
 ///////////////////////////////////////////////////
 // exception
 ///////////////////////////////////////////////////
+
+// namespace Engine::Excpt
+namespace Excpt {
+
 struct __Connection_Except {
     static std::string name() {
         return "Connection";
@@ -148,6 +175,75 @@ struct __Connection_Except {
 // 连接时异常
 typedef ExceptionTemplate<__Connection_Except> ConnectionException;
 
+struct __Connection_wrong_packet_type {
+    static std::string name() {
+        return "wrong_packet_type";
+    }
+};
+// packet 类型异常
+typedef ExceptionTemplate<__Connection_wrong_packet_type> wrong_packet_type;
+
+// packet 数据不完整 异常
+class incomplete_data : public std::exception {
+public:
+    incomplete_data(int less) noexcept : less_(less) {}
+    virtual ~incomplete_data(void) noexcept {}
+    virtual const char* what(void) const noexcept {
+        return "incomplete_data";
+    }
+    const int less(void) const {
+        return less_;
+    }
+private:
+    int   less_;
+};
+
+// engine Connection 状态异常
+using status_t = ConnetionStatus::status_t;
+class wrong_conn_status : public std::exception {
+public:
+    wrong_conn_status(status_t wrong_status, 
+            status_t current_status) noexcept 
+        : std::exception(), 
+        m_wrong_status(wrong_status),
+        m_current_status(current_status) {}
+    virtual ~wrong_conn_status(void) noexcept {}
+    virtual const char* what(void) const noexcept {
+        static sdata_t map_status[5] = {
+            "status_not_connected",
+            "status_connected",
+            "status_hello",
+            "status_auth",
+            "status_data"
+        };
+        const_cast<wrong_conn_status*>(this)->m_message =
+            "wrong_conn_status: '" + map_status[m_wrong_status]
+            + "', current status = '" + map_status[m_current_status] + "'";
+        return m_message.c_str() ;
+    } 
+private:
+    status_t m_wrong_status;
+    status_t m_current_status;
+    sdata_t  m_message;
+};
+
+using EncryptException = ::EncryptException;
+using DecryptException = ::DecryptException;
+} // namespace Engine::Excpt
 } // namespace Engine
+
+
+// for Client (C lib)
+typedef void (*CallbackVoid)(void);
+typedef void (*CallbackInt)(int);
+typedef void (*CallbackIntSize)(int, size_t);
+typedef void (*CallbackCharPtr)(char*);
+typedef void (*CallbackCharPtrSize)(char*, size_t);
+typedef void (*CallbackConstCharPtr)(const char*);
+typedef void (*CallbackConstCharPtrSize)(const char*, size_t);
+typedef void (*CallbackConstCharPtrInt)(const char*, int);
+typedef void (*CallbackIntConstCharPtrSize)(int, const char*, size_t);
+typedef void (*CallbackIntConstCharPtrConstCharPtrSizeSize)(
+        int, const char*, const char*, size_t, size_t);
 
 #endif // E_TYPEDEFINE_H_1

@@ -12,7 +12,7 @@
 namespace Mahjong {
 
 class Connection 
-    : public Engine::Connection {
+    : public Engine::Server::Connection {
 public:
     explicit Connection(boost::asio::io_service& io_service)
         : BASETYPE(io_service) {}

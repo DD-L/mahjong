@@ -66,5 +66,6 @@ add_subdirectory (src/boost_build)
 add_subdirectory (src/log)
 add_subdirectory (src/engine)
 add_subdirectory (src/mahjong)
+add_subdirectory (src/client)
 
 

@@ -1,5 +1,4 @@
 add_definitions (
-
     "-Wno-unknown-pragmas -Wno-unused-function"
 )
 

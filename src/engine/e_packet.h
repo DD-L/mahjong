@@ -18,7 +18,7 @@ public:
     data_t data;
 public:
     // 包头长度
-    static constexpr size_t header_length(void) {
+    static constexpr size_t header_size(void) {
         return sizeof (byte) * 4;
         // version + type + data_len_high_byte + data_len_low_byte
     }
@@ -98,8 +98,8 @@ public:
 }; // struct Engine::__packet
 
 namespace packet {
-enum  { header_length = __packet::header_length() };
-};
+enum  { header_size = __packet::header_size() };
+}; // namespace Engine::packet
 
 class request_and_reply_base_class {
 public:
@@ -112,6 +112,7 @@ struct __request_type : request_and_reply_base_class {
         hello    = 0x00,
         exchange = 0x02,
         data     = 0x06,
+        ping     = 0x07,
         zipdata  = 0x17,
         bad      = 0xff
     };
@@ -124,6 +125,7 @@ struct __reply_type : request_and_reply_base_class {
         deny     = 0x04,
         timeout  = 0x05,
         data     = 0x06,
+        ping     = 0x07,
         zipdata  = 0x17,
         bad      = 0xff
     };
@@ -185,6 +187,13 @@ public:
     virtual data_len_t data_len(void) const override {
         data_len_t len = pack.data_len_high_byte;
         return ((len << 8) & 0xff00) | pack.data_len_low_byte;
+    }
+
+    data_t& get_data(void) {
+        return pack.data;
+    }
+    const data_t& get_data(void) const {
+        return const_cast<request*>(this)->get_data();
     }
 
 
@@ -440,7 +449,12 @@ public:
         data_len_t len = pack.data_len_high_byte;
         return ((len << 8) & 0xff00) | pack.data_len_low_byte;
     }
-
+    data_t& get_data(void) {
+        return pack.data;
+    }
+    const data_t& get_data(void) const {
+        return const_cast<reply*>(this)->get_data();
+    }
 
     boost::array<boost::asio::const_buffer, 5> buffers(void) const {
         boost::array<boost::asio::const_buffer, 5> bufs = 
@@ -461,6 +475,128 @@ private:
 }; // class Engine::Server::reply
 
 } // namespace Engine::Server
+
+} // namespace Engine
+
+
+// function
+namespace Engine {
+
+// 包装 packet
+
+namespace Client {
+static inline const request& pack_bad(void) {
+    static const request bad(0x00, request::bad, 0x00, data_t());
+    return bad;
+} // function Client::pack_bad
+
+static inline const request& pack_ping(void) {
+    static const request ping(0x00, request::ping, 0x00, data_t());
+    return ping;
+} // function Client::pack_ping
+
+static inline const request pack_data(data_t&& data) {
+    return request(0x00, request::data, data.size(), data);
+} // function Client::pack_data
+
+} // namespace Engine::Client
+
+namespace Server {
+static inline const reply& pack_bad(void) {
+    static const reply bad(0x00, reply::bad, 0x00, data_t());
+    return bad;
+} // function Server::pack_bad
+
+static inline const reply& pack_ping(void) {
+    static const reply ping(0x00, reply::ping, 0x00, data_t());
+    return ping;
+} // function Server::pack_ping
+
+static inline const reply pack_data(data_t&& data) {
+    return reply(0x00, reply::data, data.size(), data);
+} // function Server::pack_data
+
+} // namespace Engine::Server
+
+
+// 包完整性检查
+static inline void packet_integrity_check(std::size_t bytes_transferred, 
+        const request_and_reply_base_class& e_data) 
+            throw (Excpt::incomplete_data) {
+    if (bytes_transferred < packet::header_size) {
+        throw Excpt::incomplete_data(0xffffffff);
+    }
+    int less = 
+        e_data.data_len() + packet::header_size - bytes_transferred;
+    if (less > 0) {
+        throw Excpt::incomplete_data(less);
+    }
+}
+
+// 分包 裁剪 e_pack 包数据
+// 该方法针对 Server 和 Client 均适用 
+/**
+ * @brief cut_e_pack
+ * @param start_pos  [std::size_t] 开始切割的位置
+ * @param e_pack_len    [std::size_t] 当前 e_pack 包有效长度
+ * @param e_pack [ Engine::Client::reply | Engine::Server::request ] 要处理的 e_pack 
+ * @return  [bool] 切割后剩下后面的数据包是否完整。true 完整，false 不完整 
+ */
+template<typename ETYPE>
+static inline bool cut_e_pack(const std::size_t start_pos, 
+        const std::size_t e_pack_len, ETYPE& e_pack) {
+    static_assert(std::is_same<ETYPE, Engine::Client::reply>::value ||
+            std::is_same<ETYPE, Engine::Server::request>::value,
+            "ETYPE must be 'Engine::Client::reply' "
+            "or ' Engine::Server::request' !");
+    if (e_pack_len < start_pos + packet::header_size) {
+        return false;
+        // 如果切割后，剩下的数据包会不完整, 所以切割无意义，
+        // 多余的丢掉不处理即可。
+        // 调用者需检查返回值
+    }
+    
+    vdata_t&& buf = Engine::get_vdata_from_packet(e_pack);
+    auto&& pack = Engine::__packet(
+            *(buf.begin() + start_pos),
+            *(buf.begin() + start_pos + 1),
+            *(buf.begin() + start_pos + 2),
+            *(buf.begin() + start_pos + 3), // 包头部分结束
+            data_t(buf.begin() + start_pos + packet::header_size,
+                buf.begin() + e_pack_len)
+            ); 
+    e_pack = ETYPE(std::move(pack));
+    return true;
+} // function Engine::cut_e_pack
+
+
+
+/////////////////////////////////////////////////////
+// shared_type
+/////////////////////////////////////////////////////
+namespace Server {
+
+// Engine::Server::shared_request_type
+// shared_ptr<Server::request>
+typedef std::shared_ptr<request> shared_request_type;
+
+// Engine::Server::shared_reply_type
+// shared_ptr<Server::reply>
+typedef std::shared_ptr<reply>   shared_reply_type;
+
+} // namespace Engine::Server
+namespace Client {
+
+// Engine::Client::shared_request_type
+// shared_ptr<Client::request>
+typedef std::shared_ptr<request> shared_request_type;
+
+// Engine::Client::shared_reply_type
+// shared_ptr<Client::reply>
+typedef std::shared_ptr<reply>   shared_reply_type;
+
+} // namespace Engine::Client
+
 
 } // namespace Engine
 #endif // E_PACKET_H_1

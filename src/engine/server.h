@@ -10,6 +10,7 @@
 
 #include <engine/event.h>
 #include <engine/connection.h>
+#include <engine/config_server.h>
 
 ///////////////////////////////////////////////
 namespace Engine {
@@ -36,7 +37,7 @@ namespace Server {
 // class Engine::Server::Server 
 template <typename CONNECTION>
 class Server {
-static_assert(std::is_base_of<Engine::Connection, CONNECTION>::value,
+static_assert(std::is_base_of<Engine::Server::Connection, CONNECTION>::value,
         "CONNECTION should be derived from 'Engine::Connection'!");
 public:
     Server(void) : m_acceptor(get_io_service()) {};
@@ -46,8 +47,7 @@ public:
             m_event_thread.join();
         }
     }
-    void run(const sdata_t& bind_addr, const uint16_t bind_port,
-            std::size_t thread_n = 1) {
+    void run(const sdata_t& bind_addr, const uint16_t bind_port) {
 
         // step 1 启动事件处理引擎
         std::thread t(std::bind(&Server::start_event, this));
@@ -77,6 +77,8 @@ public:
 
         // 在子线程中启动1个或多个 m_acceptor.get_io_service().run()
         std::vector<std::thread> vt;
+        std::size_t thread_n
+            = Engine::Server::Config::get_instance().get_acceptor_io_thread();
         while (thread_n--) {
             vt.push_back(std::move(
                         std::thread(
@@ -115,8 +117,10 @@ public:
 
 private:
     void start_event(void) {
-        // 起两个线程用于事件处理驱动
-        Event::get_instance().run(2);
+        // 起n个线程用于事件处理驱动
+        std::size_t thread_n
+            = Engine::Server::Config::get_instance().get_event_io_thread();
+        Event::get_instance().run(thread_n);
     }
     // 
     void thread_working(void) {
@@ -155,7 +159,7 @@ private:
             try {
                 new_connection->start();
             }
-            catch (ConnectionException const& e) {
+            catch (Excpt::ConnectionException const& e) {
                 logerror(e.what());
             }
         }

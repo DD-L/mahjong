@@ -12,22 +12,18 @@
 #include <engine/sessionmanager.h>
 
 namespace Engine {
+namespace Server {
 
 // 负责网络通信协议部分
 class Connection : public std::enable_shared_from_this<Connection> { 
-private:
-    using request = Engine::Server::request;
-    using reply   = Engine::Server::reply;
 public:
     typedef std::shared_ptr<Connection> pointer;
     typedef Connection                  BASETYPE;
-    typedef std::shared_ptr<request> shared_request_type;
-    typedef std::shared_ptr<reply>   shared_reply_type;
 public:
-    virtual ~Connection() {}
+    virtual ~Connection();
     Connection(const Connection&) = delete;
     Connection& operator= (const Connection&) = delete;
-    void start(void) throw (ConnectionException);
+    void start(void) throw (Excpt::ConnectionException);
     virtual void close(void) throw ();
     virtual void cancel(void) throw (); 
 
@@ -35,12 +31,27 @@ public:
         return m_tcp_socket; 
     }
 protected:
-    explicit Connection(boost::asio::io_service& io_service) 
-        : m_tcp_socket(io_service) {}
+    explicit Connection(boost::asio::io_service& io_service); 
+
+private: // tools
+    // 当前 Connection 状态断言
+    void assert_status(ConnetionStatus::status_t status) {
+        if (this->m_status != status) {
+            throw Excpt::wrong_conn_status(status, this->m_status);
+        }
+    }
+
+    // 解包
+    const int unpack_data(data_t& plain, const std::size_t e_reply_length,
+            const request& request, bool is_zip = false);
+
 private:
     void read_handler(const boost::system::error_code& error,
             std::size_t bytes_transferred, shared_request_type e_request,
-            shared_data_type __data_rest, shared_data_type __write_data);
+            shared_data_type __data_rest);
+private:
+    void do_receive_message(void);
+
 private:
     inline shared_request_type make_shared_request(
             std::size_t length = readbuffer::length_handshake) {
@@ -54,9 +65,11 @@ protected:
     tcp::socket  m_tcp_socket;
     // udp::socket m_udp_socket;
 private:
-    std::shared_ptr<Session> m_session;
-}; // class Connection
+    std::shared_ptr<Session>  m_session;
+    ConnetionStatus::status_t m_status;
+}; // class Engine::Server::Connection
 
+} // namespace Server
 } // namespace Engine
 
 #endif // E_CONNECTION_H_1
