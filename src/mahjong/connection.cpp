@@ -6,10 +6,17 @@
  ************************************************************************/
 
 #include <mahjong/connection.h>
+#include <mahjong/session.h>
+
 #include <engine/log.h>
 using namespace Engine;
 
 namespace Mahjong {
+
+Connection::shared_session_t Connection::session_generator(void) {
+    // Mahjong::Session
+    return std::make_shared<Session>();
+}
 
 
 } // namespace Mahjong

@@ -6,6 +6,7 @@
  ************************************************************************/
 
 #include <client/connection.h>
+#include <client/config.h>
 
 // for Engine::Client
 
@@ -44,11 +45,20 @@ static inline sdata_t basename(const sdata_t& filename) {
 namespace Engine {
 namespace Client {
 
+
+Engine::test_and_set_value<Engine::uuid_t> Connection::m_uuid;
 std::mutex Connection::_debug_message_callback_mutex;
 std::function<void(const char*)> Connection::_debug_message_callback;
+Engine::test_and_set_value<bool> Connection::m_write_in_multithreads(false);
 
-Connection::Connection(void) : m_resolver(m_ios), m_socket(m_ios) {
-    m_ios.stop();
+Connection::Connection(io_service& io_service) 
+        : m_strand(io_service),
+          m_heartbeat(m_strand,
+                  Config::get_instance().get_ping_interval()
+          ),
+          m_resolver(io_service), 
+          m_tcp_socket(io_service) {
+    get_io_service().stop();
 }
 
 
@@ -56,10 +66,13 @@ Connection::~Connection() {
     this->stop(); 
 }
 
+void Connection::set_ping_interval(uint16_t interval) {
+    m_heartbeat.set_default_interval(interval);
+}
 
 void Connection::run(CallbackConstCharPtr callback) {
     std::lock_guard<std::mutex> lock(m_run_mutex);
-    if (! m_ios.stopped()) {
+    if (! get_io_service().stopped()) {
         callback("Already running");
         return;
     }
@@ -68,7 +81,7 @@ void Connection::run(CallbackConstCharPtr callback) {
     std::thread t(std::bind(&Connection::thread_working, this, callback));
     this->m_io_thread = std::move(t);
     // 等待线程启动
-    while (m_ios.stopped()) {
+    while (get_io_service().stopped()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1)); 
     }
 }
@@ -76,7 +89,7 @@ void Connection::run(CallbackConstCharPtr callback) {
 void Connection::start(const sdata_t& server_name, 
         const sdata_t& server_port, 
         CallbackInt callback) {
-    if (this->m_socket.is_open()) {
+    if (this->m_tcp_socket.is_open()) {
         callback(-1);
         return;
     }
@@ -87,7 +100,7 @@ void Connection::start(const sdata_t& server_name,
 }
 
 void Connection::stop() {
-    m_ios.stop();
+    get_io_service().stop();
     try {
         if (this->m_io_thread.joinable()) {
             this->m_io_thread.join();
@@ -102,11 +115,11 @@ void Connection::stop() {
 
 
 void Connection::thread_working(CallbackConstCharPtr callback) {
-    io_service::work work(m_ios);
-    m_ios.reset();
+    io_service::work work(get_io_service());
+    get_io_service().reset();
     for (;;) {
         try {
-            m_ios.run();
+            get_io_service().run();
             break;
         }
         catch (boost::system::system_error const& e) {
@@ -116,7 +129,7 @@ void Connection::thread_working(CallbackConstCharPtr callback) {
             callback(e.what());
         }
         catch (...) {
-            callback("An error has occurred. m_ios.run()");
+            callback("An error has occurred. io_service.run()");
         }
     }
     ///
@@ -127,7 +140,12 @@ void Connection::thread_working(CallbackConstCharPtr callback) {
 void Connection::cancel_socket() throw()
 try {
     boost::system::error_code ec;
-    m_socket.cancel(ec);
+    m_heartbeat.cancel(ec);
+    if (ec) {
+        (void)ec.message();
+        (void)ec.value(); 
+    }
+    m_tcp_socket.cancel(ec);
     if (ec) {
         (void)ec.message();
         (void)ec.value(); 
@@ -140,15 +158,18 @@ catch (...) {}
 
 void Connection::close_socket(bool exec_callback/* = false*/) throw()
 try {
-    if (m_socket.is_open()) {
+
+    cancel_socket();
+
+    if (m_tcp_socket.is_open()) {
         boost::system::error_code ec;
-        m_socket.shutdown(tcp::socket::shutdown_both, ec);
+        m_tcp_socket.shutdown(tcp::socket::shutdown_both, ec);
         if (ec) {
             (void)ec.message();
             (void)ec.value(); 
         }
 
-        m_socket.close(ec);
+        m_tcp_socket.close(ec);
         if (ec) {
             (void)ec.message();
             (void)ec.value();
@@ -172,13 +193,12 @@ catch (...) {}
 void Connection::resolve_handler(const boost::system::error_code& ec,
         tcp::resolver::iterator i, CallbackInt callback) {
     if (! ec) {
-        boost::asio::async_connect(m_socket, i,
+        boost::asio::async_connect(m_tcp_socket, i,
             boost::bind(&Connection::connect_handler, 
                 this, _1, _2, callback));
     } 
     else {
         // 主机不可达
-        cancel_socket();
         close_socket();
         callback(1);   
         return;
@@ -186,75 +206,95 @@ void Connection::resolve_handler(const boost::system::error_code& ec,
 }
 
 
+const_byte_ptr Connection::uuid_data(void) {
+        for (;;) {
+            try {
+                (void)m_uuid.value();
+                break;
+            }
+            catch (std::exception const&) {
+                m_uuid.set(Engine::uuid_t());
+            }
+        }
+        return m_uuid.value().data;
+}
+
+data_t Connection::ping_interval_binary(void) {
+    uint16_t interval = m_heartbeat.defualt_interval();
+    byte d[2];
+    d[0] = (interval >> 8) & 0xff; // 高字节
+    d[1] = interval & 0xff;        // 低字节
+    return data_t(d, d + 2);
+} 
+
+
 void Connection::connect_handler(const boost::system::error_code& ec,
         tcp::resolver::iterator i, CallbackInt callback) {
     if (! ec) {
-
         // 连接 Server 成功
-        callback(0);
-        // ...
 
-        // 启动 Receive Message Loop
-        do_receive_message();
+        // 发送 iddata
+        const_byte_ptr ud = uuid_data();
+        data_t iddata(ud, ud + Engine::uuid_t::static_size());
+        iddata += ping_interval_binary();
+        // 包数据组成：18个字节： 前 16字节 uuid, 后 2个字节 ping_interval
+        auto&& shared_iddata 
+            = make_shared_request(pack_iddata(std::move(iddata)));
+        tcp_socket_async_write(shared_iddata, 
+                [this, callback](std::size_t) {
+                    // 启动 Receive Message Loop
+                    do_receive_message();
+
+                    // Server 就绪
+                    callback(0);
+                });
     }
     else if (i != tcp::resolver::iterator()) {
-        this->m_socket.close();
+        this->m_tcp_socket.close();
         tcp::endpoint endpoint = *i;
-        this->m_socket.async_connect(endpoint,
+        this->m_tcp_socket.async_connect(endpoint,
                 boost::bind(&Connection::connect_handler, this,
                     boost::asio::placeholders::error, ++i, callback));
     }
     else {
         // 网络不可达
-        cancel_socket();
         close_socket();
         callback(2);
         return;
     }
 }  
 
+
 // write
-void Connection::send_message(data_t&& data, 
-        CallbackIntConstCharPtrConstCharPtrSizeSize callback) {
+void Connection::send_message(data_t&& data, CallbackSize callback) {
     // step 1 加密
     // step 2 压缩
     // TODO
 
     // step 3 发送
     auto&& data_request = make_shared_request(pack_data(std::move(data)));
-    boost::asio::async_write(this->m_socket, data_request->buffers(),
-            boost::bind(&Connection::write_handler, this, _1, _2, 
-                data_request, callback));
+    tcp_socket_async_write(data_request, 
+            std::bind(callback, std::placeholders::_1));
 }
 
-void Connection::write_handler(const boost::system::error_code& error,
-        std::size_t bytes_transferred, shared_request_type send_data, 
-        CallbackIntConstCharPtrConstCharPtrSizeSize callback) {
-    //if (error) {
-        // callback(ec, ec.message(), data, data_len, bytes_transferred)
-        callback(error.value(), error.message().c_str(),
-                (const char*)(&(send_data->get_data())[0]), 
-                send_data->data_len(),
-                bytes_transferred);
-        return;
-    //}
-    // 
-    //callback(0, "Success",
-    //        (const char*)(&(send_data->get_data())[0]), 
-    //        send_data->data_len(),
-    //        bytes_transferred);
-    //return;
-}
 
 void Connection::do_receive_message(void) {
     auto&& e_reply = make_shared_reply(readbuffer::max_length);
-    this->m_socket.async_read_some(e_reply->buffers(),
+    /*
+    this->m_tcp_socket.async_read_some(e_reply->buffers(),
             boost::bind(&Connection::read_handler, this,
                 _1, _2, e_reply, Engine::placeholders::shared_data));
+                */
+    tcp_socket_async_read_some(e_reply->buffers(),
+            std::bind(&Connection::read_handler, this,
+                std::placeholders::_1, e_reply,
+                Engine::placeholders::shared_data));
+
 }
-void Connection::read_handler(const boost::system::error_code& error,
-        std::size_t bytes_transferred, shared_reply_type e_reply,
-        shared_data_type __data_rest) {
+void Connection::read_handler(
+            std::size_t       bytes_transferred, 
+            shared_reply_type e_reply,
+            shared_data_type  __data_rest) {
     if (__data_rest->size() > 0) {
         // 先修正 bytes_transferred
         // bytes_transferred += 上一次的bytes_transferred
@@ -276,31 +316,6 @@ void Connection::read_handler(const boost::system::error_code& error,
     elogdebug(_format_data(get_vdata_from_packet(*e_reply),
             int(), ' ', std::hex));
 
-    if (error) {
-        // read_error 回调
-        if (m_read_error_callback) {
-            m_read_error_callback(error.message().c_str(), error.value());
-        }
-
-        // boost::asio::error::eof == 2 
-        // // 本地 socket 所在连接被对方完全关闭（4次握手） 会引发 eof
-        //
-        // boost::asio::error::operation_aborted == 995
-        // // 本地socket的超时,cancel,close,shutdown 都会引发 operation_aborted
-        //
-        // boost::asio::error::bad_descriptor == 10009
-        // // 在一个已经关闭了的套接字上执行 async_receive 或 async_read 
-        //
-        // boost::asio::error::connection_reset == 10054
-        // // 正在async_receive()异步任务等待时，
-        // 远端的TCP协议层发送RESET终止链接，暴力关闭套接字。
-        // 常常发生于远端进程强制关闭时，操作系统释放套接字资源。区别于 eof
-        //
-
-        cancel_socket();
-        close_socket(true);
-        return;
-    }
     try {
 ///////////////////////////////////////////////
 // 分析包数据
@@ -316,6 +331,8 @@ case 0x00: {
     // TODO
     case reply::hello:
     case reply::exchange:
+        do_receive_message();
+        return;
         break;
     case reply::zipdata:
         is_zip_data = true;
@@ -355,7 +372,7 @@ case 0x00: {
             call_received_callback((const char*) (plain_data_ptr->c_str()),
                     (std::size_t) (plain_data_ptr->length()));
 
-            this->read_handler(error, std::size_t(rest_e_data_len),
+            this->read_handler(std::size_t(rest_e_data_len),
                     e_reply, Engine::placeholders::shared_data);
         }
         else {
@@ -374,15 +391,17 @@ case 0x00: {
         // 被 server 拒绝
         elogdebug("deny");
         // TODO
-        break;
+        do_receive_message();
+        return;
     case reply::timeout:
         // server 端 处理超时
         elogdebug("timeout");
-        break;
+        do_receive_message();
+        return;
     //case Engine::Server::request::ping: // 来自 Server 端的 ping
-    case reply::ping: // 来自 Server 端的 ping
-        respond_server_ping(); 
-        break;
+    //case reply::ping: // 来自 Server 端的 ping
+    //    respond_server_ping(); 
+    //    break;
     case reply::bad:
     default:
         elogdebug("e_pakcet is bad.");
@@ -412,7 +431,7 @@ default:
                     (std::size_t)ec.less(), 0);
 
             elogdebug("incomplete_data. start to async-read " 
-                    << ec.less() << " byte data from m_socket");
+                    << ec.less() << " byte data from m_tcp_socket");
 
             const std::size_t e_pack_size =
                 e_reply->get_data().size() + packet::header_size; 
@@ -432,20 +451,33 @@ default:
             }
             
             // 再读一些
-            this->m_socket.async_read_some(
-                    boost::asio::buffer(&(*data_client_rest)[0],
-                        (std::size_t)ec.less()),
-                    boost::bind(&Connection::read_handler,
-                        this, _1, _2, e_reply,
-                        data_client_rest));
+            //this->m_tcp_socket.async_read_some(
+            //        boost::asio::buffer(&(*data_client_rest)[0],
+            //            (std::size_t)ec.less()),
+            //        boost::bind(&Connection::read_handler,
+            //            this, _1, _2, e_reply,
+            //            data_client_rest));
+            tcp_socket_async_read_some(
+                    asio::buffer(
+                        &(*data_client_rest)[0],
+                        (std::size_t)ec.less()
+                    ), // buffer
+                    std::bind(&Connection::read_handler, this,
+                        std::placeholders::_1,
+                        e_reply,
+                        data_client_rest
+                    ) // std::bind
+            );
         }
         else { // ec.less() <= 0
             //elogdebug("send engine_bad to local. finally cancel this, this="
             //        << this);
-            //boost::asio::async_write(this->m_socket,
+            //boost::asio::async_write(this->m_tcp_socket,
             //        pack_bad().buffers(),
             //        boost::bind(&Connection::cancel, this));
-            elogdebug("Excpt::incomplete_data::less() <= 0, value=" << ec.less());
+            elogdebug("Excpt::incomplete_data::less() <= 0, value="<<ec.less());
+            //TODO
+            //TODO
             //TODO
         }
     }
@@ -528,21 +560,50 @@ const int Connection::unpack_data(data_t& plain,
 } // end - function Connection::unpack_data
 
 
-void Connection::respond_server_ping(void) {
-    boost::asio::async_write(this->m_socket, 
-            pack_ping().buffers(),
-            boost::bind(&Connection::ping_handler, this, _1, _2));
+
+// 异步心跳循环，
+// 正常情况下只有在 主动 heartbeat.cancel() 时 才会结束循环
+void Connection::do_heartbeat_loop() {
+    elogdebug("do_heartbeat_loop(). this=" << this); 
+    this->m_heartbeat.async_wait(
+            // 过期（未被取消）回调
+            [this] (void) {
+                elogdebug("heartbeat expired, send ping packet to server...");
+                // send_ping to server
+                tcp_socket_async_write(pack_ping().buffers());
+                // loop 已经由上句的 tcp_socket_async_write 发出, 这里不必重复
+                //do_heartbeat_loop();
+            });
 }
 
-void Connection::ping_handler(const boost::system::error_code& error,
-        std::size_t bytes_transferred) {
-    if (error) {
-        cancel_socket();
-        close_socket(true);
-        return;
+// on_read_error
+void Connection::tcp_socket_read_some_error_handler(
+        const boost::system::error_code& error) {
+    close_socket(true);
+
+    // 可自定义
+    // read_error 回调
+    if (m_read_error_callback) {
+        m_read_error_callback(error.message().c_str(), error.value());
     }
-    (void)bytes_transferred;
-}
+
+    // boost::asio::error::eof == 2 
+    // // 本地 socket 所在连接被对方完全关闭（4次握手） 会引发 eof
+    //
+    // boost::asio::error::operation_aborted == 995
+    // // 本地socket的超时,cancel,close,shutdown 都会引发 operation_aborted
+    //
+    // boost::asio::error::bad_descriptor == 10009
+    // // 在一个已经关闭了的套接字上执行 async_receive 或 async_read 
+    //
+    // boost::asio::error::connection_reset == 10054
+    // // 正在async_receive()异步任务等待时，
+    // 远端的TCP协议层发送RESET终止链接，暴力关闭套接字。
+    // 常常发生于远端进程强制关闭时，操作系统释放套接字资源。区别于 eof
+    //
+
+    return;
+} // end - function Connection::tcp_socket_read_some_error_handler
 
 
 } // namespace Engine::Client

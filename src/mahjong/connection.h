@@ -14,10 +14,13 @@ namespace Mahjong {
 class Connection 
     : public Engine::Server::Connection {
 public:
+    using shared_session_t = BASETYPE::shared_session_t;
+public:
     explicit Connection(boost::asio::io_service& io_service)
         : BASETYPE(io_service) {}
 private:
-    //virtual void start(void) throw(Engine::ConnectionException) override;
+    // 必须重新该方法，使其返回自己写的 Session
+    virtual shared_session_t session_generator(void) override;
 }; // Mahjong::Connection
 
 } // namespace Majong

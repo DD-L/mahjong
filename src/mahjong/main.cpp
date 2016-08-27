@@ -11,6 +11,7 @@
 #include <engine/server.h>
 
 #include <mahjong/connection.h>
+#include <mahjong/session.h>
 #include <program_options/program_options.h>
 
 #include <iostream>
@@ -90,6 +91,7 @@ void option(int argc, char** argv, std::string& server_config_file) {
     po.store(argc, argv);
     process_program_options(po, server_config_file);
 }
+
 
 int main(int argc, char* argv[])
 try {

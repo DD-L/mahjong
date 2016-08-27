@@ -26,6 +26,8 @@ add_definitions (
 
 # log_lib
     -DLOG_LOCKFREE_QUEUE
+#  deprecated warning, boost 
+    -Wno-deprecated-declarations
 )
 
 # gcc -I

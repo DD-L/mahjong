@@ -17,6 +17,9 @@ public:
         static Event event;
         return event;
     }
+    io_service& get_io_service(void) {
+        return m_event_ios; 
+    }
 
     // 阻塞
     void run(std::size_t thread_n = 1) {
@@ -49,17 +52,23 @@ public:
         return m_event_ios.stopped();
     }
 
+    template<class Fn>
+    void post(Fn&& fn) {
+        m_event_ios.post(std::forward<Fn>(fn));
+    }
+    template<class Fn>
+    void strand_post(io_service::strand& strand, Fn&& fn) {
+        m_event_ios.post(strand.wrap(std::forward<Fn>(fn)));
+    }
+
     template<class Fn, class... Args>
     void post(Fn&& fn, Args&&... args) {
-        m_event_ios.post(
-                std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
+        post(std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
     }
     template<class Fn, class... Args>
     void strand_post(io_service::strand& strand, Fn&& fn, Args&&... args) {
-        m_event_ios.post(
-                strand.wrap(
-                    std::bind(
-                        std::forward<Fn>(fn), std::forward<Args>(args)...)));
+        strand_post(strand,
+                std::bind(std::forward<Fn>(fn), std::forward<Args>(args)...));
     }
 
 private:
@@ -93,7 +102,7 @@ private:
     // 如果有很多阻塞操作，一个 ios 可以跑在多个线程中去。
     //
     io_service m_event_ios;
-    io_service m_socket_ios;
+    //io_service m_socket_ios;
 private:
     Event() = default;
     Event(const Event&) = delete;

@@ -9,6 +9,47 @@
 #include <client/functions.h>
 using namespace std;
 
+void disconnect_callback(void) {
+    cout << "Connection is unavailable" << endl;
+}
+
+void read_error_callback(const char* msg, int code) {
+    cout << "read_error: " << msg << ", code = " << code << endl;
+}
+
+void write_error_callback(const char* msg, int code,
+        const uint8_t* rest, size_t size) {
+    cout << "write_error: " << msg << ", code = " << code;
+    if (size > 0) {
+        cout << ". unfinished data: [" << size << "] bytes: ";
+        while (size--)
+        for (size_t i = 0; i < size; ++i)
+            cout << hex << "0x" << int(*(rest + i)) << " "; 
+    }
+    cout << dec << endl;
+}
+    // switch (error_code) {
+    // case 0:
+    //  // 有数据被发送出去， 发送字节 为 bytes_transferred
+    // break;
+    // case -1:
+    //  // message == nil
+    // break;
+    // case 2:
+    //  // boost::asio::error::eof  与远程 socket 4次握手 close
+    // break;
+    // case 10054:
+    // break;
+    //  // boost::asio::error::connection_reset 对方直接关闭程序. tcp 协议栈发出 RESET 消息
+    // case 995:
+    //  // boost::asio::error::operation_aborted
+    // break;
+    // case 10009:
+    // case 9:
+    //  // bad_file_descriptor
+    //  // socket 已经被关闭
+    // break;
+    // }
 
 void run_callback(const char* msg) {
     cout << msg << endl;
@@ -40,7 +81,7 @@ void received_callback(const char* data, size_t length) {
         for (size_t i = 0; i < length; ++i) {
             cout << hex << (int)*(data + i) << ' '; 
         }
-        cout << endl;
+        cout << dec << endl;
     }
 }
 
@@ -48,57 +89,38 @@ void debug_message_callback(const char* message) {
     cout << message << endl;
 }
 
-void send_message_callback(int error_code, const char* error_message,
-        const char* message, size_t message_len, size_t bytes_transferred) {
-    if (error_code) {
-        // error
-        //return;
-    }
-    // switch (error_code) {
-    // case 0:
-    //  // 有数据被发送出去， 发送字节 为 bytes_transferred
-    // break;
-    // case -1:
-    //  // message == nil
-    // break;
-    // case 2:
-    //  // boost::asio::error::eof  与远程 socket 4次握手 close
-    // break;
-    // case 10054:
-    // break;
-    //  // boost::asio::error::connection_reset 对方直接关闭程序. tcp 协议栈发出 RESET 消息
-    // case 995:
-    //  // boost::asio::error::operation_aborted
-    // break;
-    // case 10009:
-    // case 9:
-    //  // bad_file_descriptor
-    //  // socket 已经被关闭
-    // break;
-    // }
-
-    cout << "error_code = " << error_code << endl;
-    cout << "error_message = " << error_message << endl;
-    // 要发送的 数据
-    cout << "message = '";
-    if (error_code == -1) {
-        cout << "null";
-        assert(message == nullptr);
-    }
-    else {
-        for (size_t i = 0; i < message_len; ++i) {
-            cout << *(message + i);
-        }
-    }
-    cout << "'" << endl;
-    cout << "bytes_transferred = " << bytes_transferred << endl;
+void send_message_callback(size_t bytes_transferred) {
+    cout << "send_message_callback: " 
+        << "bytes_transferred = " 
+        << bytes_transferred << endl;
 }
 
 int main() {
 
-    // test Debug
+    // get/set uuid
+    //assert(SetUUID(GenUUID()));
+    assert(SetUUID("{b67d855c-43bc-4a10-bad4-7378c0156fac}"));
+
+    // 重置 heartbeat 周期，默认 120s
+    //ConnSetPingInterval(5);
+
+    // 注册 Debug Message
     ConnRegisterDebugMessageCallback(&debug_message_callback);
-    
+    // 注册断线回调
+    ConnRegisterDisconnectCallback(&disconnect_callback);
+    // 注册 read 出错回调
+    // 断线回调会先于此回调执行
+    ConnRegisterReadErrorCallback(&read_error_callback);
+    // 注册 write 出错回调
+    // 断线回调会先于此回调执行
+    ConnRegisterWriteErrorCallback(&write_error_callback);
+
+
+    // 注册read回调
+    ConnRegisterReceivedCallback(&received_callback);
+    // 测试重复注册
+    ConnRegisterReceivedCallback(&received_callback);
+
     // test ConnRun
     ConnRun(&run_callback);
     ConnRun(&run_callback);
@@ -107,8 +129,6 @@ int main() {
     ConnStart("127.0.0.1", "2222", &start_callback);
     ConnStart("127.0.0.1", "2222", &start_callback);
 
-    ConnRegisterReceivedCallback(&received_callback);
-    ConnRegisterReceivedCallback(&received_callback);
 
     // 下面语句应该放到 start_callback(0) 中去。
     std::this_thread::sleep_for(std::chrono::seconds(4)); // temp
@@ -117,7 +137,7 @@ int main() {
     ConnSendMessage("world", 5, &send_message_callback);
     ConnSendMessage(nullptr, 0, &send_message_callback);
 
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::this_thread::sleep_for(std::chrono::seconds(2000));
     return 0;
 }
 

@@ -10,6 +10,12 @@
 #include <client/connection.h>
 extern "C" {
 
+// 修改 heartbeat 探测发送的默认时间间隔
+// heartbeat 只有在网络 interval 秒内，既没有读也没有写的情况下启动
+void ConnSetPingInterval(uint32_t interval) {
+    Engine::Client::Connection::Instance().set_ping_interval(interval);
+}
+
 // 启动连接服务
 // callback(void) - 线程退出的时候执行的回调函数
 void ConnRun(CallbackConstCharPtr callback) {
@@ -49,34 +55,65 @@ void ConnRegisterDisconnectCallback(CallbackVoid callback) {
 }
 
 // 注册 read error 后的回调函数，会给出失败原因及失败码
+// 断线回调会先于此回调执行
 void ConnRegisterReadErrorCallback(CallbackConstCharPtrInt callback) {
     Engine::Client::Connection::Instance().register_read_error_callback(
             std::bind(callback, std::placeholders::_1, std::placeholders::_2));
 }
 
-// callback(error_code, ec.message, data, data_len, bytes_transferred), 
-// ec == 0 成功, 
-// ec != 0 失败, >0 时是错误码, < 0 时 data == nil
+// 只要连接可用，数据就一定会被写完， write_error_callback 被调用意味着:
+// 1. 连接已经不可用
+// 2. 给出出错信息、错误码, 和未写入的数据
+// 3. 注意，断线回调 先于 write_error_callback 执行
+void ConnRegisterWriteErrorCallback(
+        CallbackConstCharPtrIntConstBytePtrSize callback) {
+    Engine::Client::Connection::Instance().register_write_error_callback(
+            std::bind(callback, std::placeholders::_1, std::placeholders::_2,
+                std::placeholders::_3, std::placeholders::_4)
+    );
+}
+
+// send message
+// 如果 data == nullptr, 则函数返回 false 
+// callback(bytes_transferred), 
+//
 // bytes_transferred 实际传输的字节数，
 //    包含 Engine 本身的包头长度 ConnPacketHeaderSize()
-void ConnSendMessage(const char* data, std::size_t data_len, 
-        CallbackIntConstCharPtrConstCharPtrSizeSize callback) {
-    if (data) {
-        Engine::Client::Connection::Instance().send_message(
-                { data, data + data_len }, 
-                callback);
-    }
-    else {
-        callback(-1, "send_data == null", data, data_len, 0); // data == nullptr
-    }
+bool ConnSendMessage(const char* data, std::size_t data_len, 
+        CallbackSize callback) {
+    if (data == nullptr)  return false;
+    Engine::Client::Connection::Instance().send_message(
+            { 
+              (Engine::const_byte_ptr)data, 
+              (Engine::const_byte_ptr)(data + data_len)
+            }, 
+            callback);
+    return true;
 }
 
 size_t ConnPacketHeaderSize(void) {
     return Engine::packet::header_size;    
 }
 
-//void SendMessage(const char* msg, msg_len, handler);
-//void Regerster(handler);
+
+// uuid
+bool SetUUID(const char* uuid) {
+    if (nullptr == uuid) return false;
+    try {
+        using Connection = Engine::Client::Connection;
+        using uuid_t     = Engine::uuid_t;
+        uuid_t u(uuid);
+        return Connection::Instance().m_uuid.set(std::move(u));
+    }
+    catch (std::runtime_error const&) {
+        return false; 
+    }
 }
 
+const char* GenUUID(void) {
+    static Engine::uuid_t u;
+    return u.to_string().c_str();
+}
+
+} // extern "C"
 #endif // EC_FUNCTIONS_H_1

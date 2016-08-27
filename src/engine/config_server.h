@@ -12,7 +12,7 @@ namespace Engine {
 // namespace Engine::Server
 namespace Server {
 
-class Config : public Engine::Config {
+class Config final : public Engine::Config {
 private:
     Config(void) = default;
     Config(const Config&) = delete;
@@ -32,29 +32,39 @@ public:
     bool get_zip_on(void) const {
         return m_zip_on;
     }
-    uint32_t get_timeout(void) const {
+    uint16_t get_timeout(void) const {
         return m_timeout;
     }
     const sdata_t& get_errfile(void) const {
         return m_errfile;
     }
-    uint32_t get_ping_interval(void) const {
-        return m_ping_interval;
-    }
+    /*
+     * 来自基类
+    virtual uint16_t get_ping_interval(void) const override;
+    */
     std::size_t get_event_io_thread(void) const {
         return m_event_io_thread;
     }
     std::size_t get_acceptor_io_thread(void) const {
         return m_acceptor_io_thread;
     }
+    uint16_t get_max_heartbeat_lose(void) const {
+        return m_max_heartbeat_lose;
+    }
+    uint16_t get_reconnection_delay(void) const {
+        return m_reconnection_delay;
+    }
+
+
 private:
     sdata_t     m_bind_addr;
     sdata_t     m_errfile;            // = "";
-    uint32_t    m_timeout;            // = 90;
-    uint32_t    m_ping_interval;      // = 120;
     std::size_t m_event_io_thread;    // = 4;
     std::size_t m_acceptor_io_thread; // = 2;
+    uint16_t    m_timeout;            // = 90;
     uint16_t    m_bind_port;
+    uint16_t    m_max_heartbeat_lose; // 2
+    uint16_t    m_reconnection_delay; // 25
     bool        m_zip_on;             // = false;
 }; // class Engine::Server::Config
 

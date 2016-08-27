@@ -1,5 +1,5 @@
 /*************************************************************************
-	> File Name:    typedefine.h
+	> File Name:    src/engine/typedefine.h
 	> Author:       D_L
 	> Mail:         deel@d-l.top
 	> Created Time: 2016/7/14 11:51:44
@@ -11,6 +11,7 @@
 #include <except/except.h>
 #include <engine/macros.h>
 
+#include <stdexcept>
 #include <stdint.h>
 #include <assert.h>
 #include <string>
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include <memory>
 #include <type_traits>
 #include <system_error>
@@ -27,6 +29,10 @@
 #include <boost/bind.hpp>
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
+
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 namespace Engine {
 
@@ -46,10 +52,162 @@ typedef std::vector<byte>       vdata_t;
 // Engine::shared_data_type
 typedef std::shared_ptr<data_t> shared_data_type;
 
+
+////////////////////////////////////////////////////////////////////////////
+// 
+// std::mutex 开关 
+//
+// Engine::UseStdMutex<bool>
+//
+////////////////////////////////////////////////////////////////////////////
+// 有
+// sizeof (UseStdMutex<true>) == sizeof (std::mutex) // == 40 (64bit)
+// sizeof (UseStdMutex<false>) == 1
+//
+// std::is_same<UseStdMutex<true>, std::mutex>::value == true 
+// std::is_same<UseStdMutex<flase>, std::mutex>::value == false 
+//
+
+// namespace Engine::Details
+namespace Details {
+
+template<bool>
+struct __usestdmutex {
+    typedef std::mutex Type;
+};
+
+template<>
+struct __usestdmutex<false> {
+private:
+    struct __empty {
+        // 保持与 std::mutex 的 成员函数名 和 成员函数签名 完全一致
+        constexpr __empty() noexcept = default;
+        __empty(const __empty&) = delete;
+        __empty& operator= (const __empty&) = delete;
+        ~__empty() = default;
+        
+        void lock(void) {}
+        bool try_lock(void) { return true; }
+        void unlock(void) {}
+        std::mutex::native_handle_type native_handle(void) {
+            if (std::is_pointer<std::mutex::native_handle_type>::value)
+                return nullptr;
+            return std::mutex::native_handle_type();
+        }
+    };
+public:
+    typedef __empty Type;
+};
+} // namespace Engine::Details
+
+// class Engine::UseStdMutex<bool>
+template<bool value>
+using UseStdMutex = typename Details::__usestdmutex<value>::Type;
+
+
+/////////////////////////////////////////////////////////
+// class Engine::test_and_set_value  thread-safe
+/////////////////////////////////////////////////////////
+// 线程安全的设置定一个值，保证它只能被初始化一次，或设定 set 一次。
+//
+// 1. 获取该值时，若此前 未曾初始化 同时也未被设定 set，则会抛出
+// 一个 std::runtime_error 的异常。
+// 2. 被初始化后，仍然可以被设定 set 一次。
+// 3. 设定成功, set(value) 返回 true
+// 4. 尝试多次设定，则 set(value) 返回 false
+//
+// 示例:
+//
+// test_and_set_value<int> i(100);
+// cout << i << endl;                         // 100
+// cout << i.value() << endl;                 // 100;
+// assert(i.set(200) == true);
+// cout << i.value() << endl;                 // 200;
+// assert(i.set(200) == false);
+//
+//
+// test_and_set_value<string> s;
+// try {
+//     s.value(); // throw std::runtime_error
+// }
+// catch(std::exception const& e) { 
+//    cout << e.what() << endl; 
+//    // "test_and_set_value::value(): An uninitialized object or not set"
+// }
+// assert(s.set("hello") == true);
+// cout << s.value() << endl;                 // hello
+// cout << (string)s << endl;                 // hello
+// assert(s.set("world") == false);
+//
+// struct C {
+//     C() = delete;
+//     C(int) {}
+// };
+// test_and_set_value<C> c;
+// assert(c.set(C(100)) == true);
+// C cc(200);
+// test_and_set_value<C> c2(cc);
+// assert(c2.set(C(500)) == true);
+// assert(c2.set(cc) == false);
+// test_and_set_value<C> c3(C(1));
+/////////////////////////////////////////////////////////
+template <typename ValueType>
+class test_and_set_value final {
+    std::shared_ptr<ValueType>m_value_ptr;
+    std::atomic_flag           m_flag;
+public:
+    test_and_set_value(void) : 
+        m_flag(ATOMIC_FLAG_INIT) {}
+    test_and_set_value(const ValueType& initial_value) : 
+        m_value_ptr(std::make_shared<ValueType>(initial_value)),
+        m_flag(ATOMIC_FLAG_INIT) {}
+    test_and_set_value(ValueType&& initial_value) : 
+        m_value_ptr(std::make_shared<ValueType>(std::move(initial_value))),
+        m_flag(ATOMIC_FLAG_INIT) {}
+
+    test_and_set_value(const test_and_set_value&) = delete;
+    test_and_set_value& operator= (const test_and_set_value&) = delete;
+    ~test_and_set_value() = default;
+
+    bool set(const ValueType& value) {
+        return _set([this, &value]() {
+            m_value_ptr = std::make_shared<ValueType>(value);
+        });
+    }
+    bool set(ValueType&& value) {
+        return _set([this, &value]() {
+            m_value_ptr = std::make_shared<ValueType>(std::move(value));
+        });
+    }
+
+    const ValueType& value(void) const throw (std::runtime_error) {
+        if (m_value_ptr)
+            return *m_value_ptr;
+        throw std::runtime_error(
+             "test_and_set_value::value(): An uninitialized object or not set");
+    }
+
+    operator const ValueType&(void) const throw (std::runtime_error) {
+        return value();
+    }
+private:
+    template<typename Func>
+    bool _set(Func f) {
+        if (! m_flag.test_and_set()) {
+            f();
+            return true;
+        }
+        return false;
+    }
+}; // class Engine::test_and_set_value
+
 ///////////////////////////////////////////////////
 // boost
 ///////////////////////////////////////////////////
-using namespace boost::asio;
+
+//namespace Engine::asio;
+namespace asio = boost::asio;
+using namespace asio;
 using ip::tcp;
 using ip::udp;
 
@@ -65,7 +223,8 @@ using ip::udp;
  * @return              返回一个容器长度为 data_length, 且被 v 
  *                      填充的 shared_data_type 类型临时对象 
  */
-static inline shared_data_type make_shared_data(const std::size_t data_length,
+static inline shared_data_type
+make_shared_data(const std::size_t data_length,
         data_t::value_type v) {
     return std::make_shared<data_t>(data_length, v);
 }
@@ -74,14 +233,53 @@ static inline shared_data_type make_shared_data(const std::size_t data_length,
  * @param data 默认值为 data_t()
  * @return     返回一个shared_data_type 类型临时对象, 此对象指向一个 data 的副本
  */
-template<typename DATATYPE>
-static inline shared_data_type make_shared_data(DATATYPE&& data = data_t()) {
-    return std::make_shared<DATATYPE>(std::forward<DATATYPE>(data));
+static inline shared_data_type
+make_shared_data(const data_t& data) {
+    return std::make_shared<data_t>(data);
 }
-static inline shared_data_type make_shared_data(void) {
+static inline shared_data_type
+make_shared_data(data_t&& data) {
+    return std::make_shared<data_t>(std::move(data));
+}
+static inline shared_data_type 
+make_shared_data(void) {
     return std::make_shared<data_t>();
 }
 
+// make_shated_data(std::begin, std::end);
+template <typename Iterator>
+static inline shared_data_type
+make_shared_data(const Iterator& begin, const Iterator& end) {
+    return make_shared_data({begin, end});
+}
+
+// make_shared_data(data_t/vdata_t/sdata_t)
+template <typename DATATYPE>
+static inline shared_data_type
+make_shared_data(DATATYPE&& data) {
+    return make_shared_data(
+            std::forward<DATATYPE>(data).begin(), 
+            std::forward<DATATYPE>(data).end()
+    );
+}
+
+
+// 将 asio::mutable_buffer 或 asio::const_buffer 转换成 shared_data_type
+// 或将 
+//      boost::array<asio::mutable_buffer, N> 
+//   或 boost::array<asio::const_buffer, N>
+// 转换成 shared_data_type
+template <typename BufferSequence>
+static inline shared_data_type 
+buffer2shared_data(const BufferSequence& __buffer) {
+    //vdata_t _data(boost::asio::buffer_size(buffer));
+    //boost::asio::buffer_copy(boost::asio::buffer(_data), buffer);
+    //return make_shared_data(std::move(_data));
+    auto&& buffer = asio::buffer(__buffer);
+    auto begin(asio::buffer_cast<byte_ptr>(buffer)); // const_byte_ptr ?? TODO
+    const size_t size = asio::buffer_size(buffer);
+    return make_shared_data({begin, begin + size});
+}
 
 /**
  * @brief _debug_format_data 格式化一组数据
@@ -156,7 +354,8 @@ namespace ConnetionStatus {
         status_connected     = 0x01,
         status_hello         = 0x02,
         status_auth          = 0x03,
-        status_data          = 0x04
+        status_iddata        = 0x04,
+        status_data          = 0x05
     };
 } // namespace Engine::Status
 
@@ -209,11 +408,12 @@ public:
         m_current_status(current_status) {}
     virtual ~wrong_conn_status(void) noexcept {}
     virtual const char* what(void) const noexcept {
-        static sdata_t map_status[5] = {
+        static sdata_t map_status[6] = {
             "status_not_connected",
             "status_connected",
             "status_hello",
             "status_auth",
+            "status_iddata",
             "status_data"
         };
         const_cast<wrong_conn_status*>(this)->m_message =
@@ -236,12 +436,15 @@ using DecryptException = ::DecryptException;
 // for Client (C lib)
 typedef void (*CallbackVoid)(void);
 typedef void (*CallbackInt)(int);
+typedef void (*CallbackSize)(size_t);
 typedef void (*CallbackIntSize)(int, size_t);
 typedef void (*CallbackCharPtr)(char*);
 typedef void (*CallbackCharPtrSize)(char*, size_t);
 typedef void (*CallbackConstCharPtr)(const char*);
 typedef void (*CallbackConstCharPtrSize)(const char*, size_t);
 typedef void (*CallbackConstCharPtrInt)(const char*, int);
+typedef void (*CallbackConstCharPtrIntConstBytePtrSize)(
+        const char*, int, const uint8_t*, size_t);
 typedef void (*CallbackIntConstCharPtrSize)(int, const char*, size_t);
 typedef void (*CallbackIntConstCharPtrConstCharPtrSizeSize)(
         int, const char*, const char*, size_t, size_t);

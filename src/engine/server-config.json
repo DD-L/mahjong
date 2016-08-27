@@ -4,9 +4,10 @@
         "bind_addr": "0.0.0.0",
         "bind_port": 2222,
         "zip_on": false,
-        "timeout": 90,
+        "timeout": 40,
+        "max_heartbeat_lose" : 2,
         //"errfile": "/var/log/Engine/server.err",
-        "ping_interval": 10,
+        "reconnection_delay" : 25, // 断线重连时 session 保活的最大时长 
         "event_io_thread": 4,
         "acceptor_io_thread": 2
     }

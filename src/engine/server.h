@@ -37,10 +37,16 @@ namespace Server {
 // class Engine::Server::Server 
 template <typename CONNECTION>
 class Server {
-static_assert(std::is_base_of<Engine::Server::Connection, CONNECTION>::value,
-        "CONNECTION should be derived from 'Engine::Connection'!");
 public:
-    Server(void) : m_acceptor(get_io_service()) {};
+    typedef CONNECTION connection_type;
+    static_assert(std::is_base_of<Connection, connection_type>::value,
+        "connection_type should be derived from 'Engine::Server::Connection'!");
+public:
+    Server(void) : 
+        m_acceptor(get_io_service()),
+        m_acceptor_io_thread_n (
+            Engine::Server::Config::get_instance().get_acceptor_io_thread()  
+        ) {};
     Server(const Server&) = delete;
     virtual ~Server() {
         if (m_event_thread.joinable()) {
@@ -75,10 +81,12 @@ public:
 
         boost::asio::io_service::work work(m_acceptor.get_io_service());
 
+        // 将是否是多线程的信息反馈给 Connection
+        Connection::inital_multithread_setting(m_acceptor_io_thread_n);        
+
         // 在子线程中启动1个或多个 m_acceptor.get_io_service().run()
         std::vector<std::thread> vt;
-        std::size_t thread_n
-            = Engine::Server::Config::get_instance().get_acceptor_io_thread();
+        std::size_t thread_n = m_acceptor_io_thread_n;
         while (thread_n--) {
             vt.push_back(std::move(
                         std::thread(
@@ -145,7 +153,7 @@ private:
 private:
     void start_accept(void) {
         Connection::pointer new_connection = 
-            std::make_shared<CONNECTION>(
+            std::make_shared<connection_type>(
                     m_acceptor.get_io_service()
             );
         m_acceptor.async_accept(new_connection->tcp_socket(),
@@ -171,7 +179,7 @@ private:
     }
 private:
     // socket io 用的 io_service
-    constexpr io_service& get_io_service() {
+    static io_service& get_io_service() {
         static io_service ios;
         return ios;
     }
@@ -179,6 +187,7 @@ private:
     // 用于接收来自客户端的 tcp 网络连接 
     tcp::acceptor m_acceptor;
     std::thread   m_event_thread;
+    std::size_t   m_acceptor_io_thread_n;
 }; // class Engine::Server::Server
 
 } // namespace Engine::Server

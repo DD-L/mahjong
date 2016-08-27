@@ -107,27 +107,39 @@ public:
     virtual ~request_and_reply_base_class() {}
 };
 
+enum class CommonType : byte {
+    bad      = 0xff,
+    hello    = 0x00,
+    exchange = 0x01,
+    iddata   = 0x02,
+    data     = 0x03,
+    zipdata  = 0x04,
+    ping     = 0x05
+};
+
 struct __request_type : request_and_reply_base_class {
-    enum PackType {
-        hello    = 0x00,
-        exchange = 0x02,
-        data     = 0x06,
-        ping     = 0x07,
-        zipdata  = 0x17,
-        bad      = 0xff
+    enum PackType : byte {
+        bad      = (byte)CommonType::bad,     // 0xff
+        hello    = (byte)CommonType::hello,   // 0x00
+        exchange = (byte)CommonType::exchange,// 0x01
+        iddata   = (byte)CommonType::iddata,  // 0x02
+        data     = (byte)CommonType::data,    // 0x03
+        zipdata  = (byte)CommonType::zipdata, // 0x04
+        ping     = (byte)CommonType::ping     // 0x05
     };
 }; // struct Engine::__request_type
 
 struct __reply_type : request_and_reply_base_class {
-    enum PackType {
-        hello    = 0x01,
-        exchange = 0x03,
-        deny     = 0x04,
-        timeout  = 0x05,
-        data     = 0x06,
-        ping     = 0x07,
-        zipdata  = 0x17,
-        bad      = 0xff
+    enum PackType : byte {
+        bad      = (byte)CommonType::bad,     // 0xff
+        hello    = (byte)CommonType::hello,   // 0x00
+        exchange = (byte)CommonType::exchange,// 0x01
+        iddata   = (byte)CommonType::iddata,  // 0x02
+        data     = (byte)CommonType::data,    // 0x03
+        zipdata  = (byte)CommonType::zipdata, // 0x04
+        ping     = (byte)CommonType::ping,    // 0x05
+        deny     = 0x06,
+        timeout  = 0x07
     };
 }; // struct Engine::__reply_type
 
@@ -195,7 +207,6 @@ public:
     const data_t& get_data(void) const {
         return const_cast<request*>(this)->get_data();
     }
-
 
     boost::array<boost::asio::const_buffer, 5> buffers(void) const {
         boost::array<boost::asio::const_buffer, 5> bufs = 
@@ -485,6 +496,16 @@ namespace Engine {
 // 包装 packet
 
 namespace Client {
+
+//static inline const request pack_iddata(data_t&& data) {
+//    return request(0x00, request::iddata, data.size(), std::move(data));
+//} // function Client::pack_iddata
+template <class DataType>
+static inline const request pack_iddata(DataType&& data) {
+    return request(0x00, request::iddata, data.size(),
+            std::forward<DataType>(data));
+} // function Client::pack_iddata
+
 static inline const request& pack_bad(void) {
     static const request bad(0x00, request::bad, 0x00, data_t());
     return bad;
@@ -495,8 +516,13 @@ static inline const request& pack_ping(void) {
     return ping;
 } // function Client::pack_ping
 
-static inline const request pack_data(data_t&& data) {
-    return request(0x00, request::data, data.size(), data);
+//static inline const request pack_data(data_t&& data) {
+//    return request(0x00, request::data, data.size(), std::move(data));
+//} // function Client::pack_data
+template <class DataType>
+static inline const request pack_data(DataType&& data) {
+    return request(0x00, request::data, data.size(),
+            std::forward<DataType>(data));
 } // function Client::pack_data
 
 } // namespace Engine::Client
@@ -512,9 +538,15 @@ static inline const reply& pack_ping(void) {
     return ping;
 } // function Server::pack_ping
 
-static inline const reply pack_data(data_t&& data) {
-    return reply(0x00, reply::data, data.size(), data);
+//static inline const reply pack_data(data_t&& data) {
+//    return reply(0x00, reply::data, data.size(), std::move(data));
+//} // function Server::pack_data
+
+template <class DataType>
+static inline const reply pack_data(DataType&& data) {
+    return reply(0x00, reply::data, data.size(), std::forward<DataType>(data));
 } // function Server::pack_data
+
 
 } // namespace Engine::Server
 

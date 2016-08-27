@@ -15,6 +15,9 @@ class Config {
     virtual void configure(const sdata_t& config_file) = 0;
 public:
     virtual ~Config(void) {}
+    virtual uint16_t get_ping_interval(void) const {
+        return 120; // seconds
+    }
 }; // class Engine::Config
 
 } // namespace Engine

@@ -20,24 +20,29 @@ try {
     m_bind_addr = pt.get<sdata_t>("EngineServer.bind_addr");
     m_bind_port = pt.get<uint16_t>("EngineServer.bind_port");
     m_zip_on    = pt.get<bool>("EngineServer.zip_on", false);
-    m_timeout   = pt.get<uint32_t>("EngineServer.timeout", 90);
+    m_timeout   = pt.get<uint16_t>("EngineServer.timeout", 40);
     m_errfile   = pt.get<sdata_t>("EngineServer.errfile", "");
-    m_ping_interval = pt.get<uint32_t>("EngineServer.ping_interval", 120);
     m_event_io_thread
         = pt.get<std::size_t>("EngineServer.event_io_thread", 4);
     m_acceptor_io_thread 
         = pt.get<std::size_t>("EngineServer.acceptor_io_thread", 2);
+    m_max_heartbeat_lose
+        = pt.get<std::uint16_t>("EngineServer.max_heartbeat_lose", 2);
+    m_reconnection_delay
+        = pt.get<std::uint16_t>("EngineServer.reconnection_delay", 25);
 
     // print
-    _print_s("[INFO] bind_addr:          " << m_bind_addr << std::endl);
-    _print_s("[INFO] bind_port:          " << m_bind_port << std::endl);
+    using std::endl;
+    _print_s("[INFO] bind_addr:          " << m_bind_addr << endl);
+    _print_s("[INFO] bind_port:          " << m_bind_port << endl);
     _print_s("[INFO] zip_on:             " 
-            << std::boolalpha << m_zip_on << std::endl);
-    _print_s("[INFO] timeout:            " << m_timeout << std::endl);
-    _print_s("[INFO] errfile:            " << m_errfile << std::endl);
-    _print_s("[INFO] ping_interval:      " << m_ping_interval << std::endl);
-    _print_s("[INFO] event_io_thread:    "<< m_event_io_thread << std::endl);
-    _print_s("[INFO] acceptor_io_thread: "<< m_acceptor_io_thread << std::endl);
+            << std::boolalpha << m_zip_on << endl);
+    _print_s("[INFO] timeout:            " << m_timeout << endl);
+    _print_s("[INFO] max_heartbeat_lose: " << m_max_heartbeat_lose << endl);
+    _print_s("[INFO] errfile:            " << m_errfile << endl);
+    _print_s("[INFO] reconnection_delay: " << m_reconnection_delay << endl);
+    _print_s("[INFO] event_io_thread:    " << m_event_io_thread << endl);
+    _print_s("[INFO] acceptor_io_thread: " << m_acceptor_io_thread << endl);
 }
 catch (const ptree_error& e) {
     _print_s_err("[FATAL] " << e.what() 
