@@ -15,6 +15,10 @@
 
 # Fortran module files
 *.mod
+<<<<<<< HEAD
+=======
+*.smod
+>>>>>>> 47f35e1c096f633882849cdaa08ce593f4042a87
 
 # Compiled Static libraries
 *.lai
