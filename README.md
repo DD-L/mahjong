@@ -21,10 +21,10 @@
     * 客户端会话管理
       * 基于uuid 的 session
       * session_manager
-    * mahjong demo
-      * connection
-      * session
-      * handler_test
+  * mahjong demo
+    * connection
+    * session
+    * handler_test
   * 客户端网络通信共享库
     * 与客户端的 C# 交互
   * 其他
