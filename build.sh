@@ -18,7 +18,7 @@ fi
 if  !(test  -f contrib/boost/boost_1_57_0/boost/success_flag) 
 then
     cd contrib/boost-ExtractSourceCode; 
-    make
+    make > /dev/null
     cd -
     mv contrib/boost-ExtractSourceCode/boost contrib/boost
 fi
