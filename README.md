@@ -1,4 +1,4 @@
-# mahjong
+# mahjong [![Build Status](https://travis-ci.org/DD-L/mahjong.svg?branch=develop)](https://travis-ci.org/DD-L/mahjong)
 这是一款基于 asio 并使用现代 C++ 语言风格编写的轻量级(游戏)服务器引擎，客户端通过简单的约定协议就能与服务端交互。
 
 #### 目标
