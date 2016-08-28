@@ -10,6 +10,15 @@
 #### Engine 配置文件
  * [server-config.json](./src/engine/server-config.json)
 
+#### Build
+
+  ```shell
+  $ git clone --branch=develop https://github.com/DD-L/mahjong.git mahjong
+  $ cd mahjong
+  $ git submodule update --init --recursive
+  $ ./build.sh
+  ```
+
 #### 现已完成的
   目前完成的工作有限:
   
