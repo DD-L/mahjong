@@ -40,6 +40,7 @@
   * UsersMgr
   * Python Script（对热更新的支持）
   * docker 支持
+  * udp
   * ...
   
 #### 该项目网络部分和其它一小部分借鉴了 [lproxy](https://github.com/DD-L/lproxy)
