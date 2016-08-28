@@ -16,7 +16,7 @@
   $ git clone --branch=develop https://github.com/DD-L/mahjong.git mahjong
   $ cd mahjong
   $ git submodule update --init --recursive
-  $ ./build.sh
+  $ ./build.sh # 因为要释放 boost, 所以第一次 build 可能会有些慢
   ```
 
 #### 现已完成的
