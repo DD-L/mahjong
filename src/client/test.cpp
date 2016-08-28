@@ -98,8 +98,8 @@ void send_message_callback(size_t bytes_transferred) {
 int main() {
 
     // get/set uuid
-    //assert(SetUUID(GenUUID()));
-    assert(SetUUID("{b67d855c-43bc-4a10-bad4-7378c0156fac}"));
+    assert(SetUUID(GenUUID()));
+    //assert(SetUUID("{b67d855c-43bc-4a10-bad4-7378c0156fac}"));
 
     // 重置 heartbeat 周期，默认 120s
     //ConnSetPingInterval(5);

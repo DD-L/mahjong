@@ -30,6 +30,7 @@ public:
         assert(m_write_in_multithreads.set(thread_n > 1 ? true : false));
     }
 public:
+    explicit Connection(boost::asio::io_service& io_service); 
     virtual ~Connection();
     Connection(const Connection&) = delete;
     Connection& operator= (const Connection&) = delete;
@@ -89,8 +90,6 @@ public:
         tcp_socket_async_write(shared_reply, 
                 std::forward<SendSucceededHandler>(succeeded_handler));
     }
-protected:
-    explicit Connection(boost::asio::io_service& io_service); 
 private: // tools
     // 当前 Connection 状态断言
     void assert_status(ConnetionStatus::status_t status) {
