@@ -9,6 +9,20 @@
 set -e
 set -x
 
+if  !(test -d contrib/boost-ExtractSourceCode ) 
+then
+    git submodule init
+    git submodule update
+fi
+
+if  !(test  -f contrib/boost/boost_1_57_0/boost/success_flag) 
+then
+    cd contrib/boost-ExtractSourceCode; 
+    make
+    cd -
+    mv contrib/boost-ExtractSourceCode/boost contrib/boost
+fi
+
 if [ x$1 = x"clean" ]
 then
     rm -rf build
