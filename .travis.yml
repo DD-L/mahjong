@@ -12,7 +12,7 @@ before_install:
     - gcc --version
     - sudo apt-get install dos2unix
 
-install:
+script:
     - PROJECT_ROOT=`pwd` 
     - ./build.sh
 
