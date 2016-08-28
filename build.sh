@@ -11,8 +11,9 @@ set -x
 
 if  !(test -d contrib/boost-ExtractSourceCode ) 
 then
-    git submodule init
-    git submodule update
+    #git submodule init
+    #git submodule update
+    git submodule update --init --recursive
 fi
 
 if  !(test  -f contrib/boost/boost_1_57_0/boost/success_flag) 
