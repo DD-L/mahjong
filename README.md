@@ -7,6 +7,9 @@
   
   * 目标 3：高并发、高性能、高可用。
 
+#### Engine 配置文件
+ * [server-config.json](./src/engine/server-config.json)
+
 #### 现已完成的
   目前完成的工作有限:
   
@@ -21,7 +24,7 @@
     * 客户端会话管理
       * 基于uuid 的 session
       * session_manager
-  * mahjong demo
+  * [mahjong demo](./src/mahjong)
     * connection
     * session
     * handler_test
@@ -40,6 +43,7 @@
   * UsersMgr
   * Python Script（对热更新的支持）
   * docker 支持
+  * crypto
   * udp
   * ...
   
