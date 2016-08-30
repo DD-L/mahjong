@@ -20,9 +20,10 @@ class Session; // class Engine::Server::Session;
 
 // 负责网络通信协议部分
 class Connection : public std::enable_shared_from_this<Connection> { 
+protected:
+    typedef Connection                  BASETYPE;
 public:
     typedef std::shared_ptr<Connection> pointer;
-    typedef Connection                  BASETYPE;
     typedef std::shared_ptr<Session>    shared_session_t;
 public:
     // 初始化多线程, 最多只能设置一次，否则会断言失败

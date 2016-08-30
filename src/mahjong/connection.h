@@ -11,14 +11,14 @@
 
 namespace Mahjong {
 
-class Connection 
-    : public Engine::Server::Connection {
-public:
+class Connection : public Engine::Server::Connection {
+
     using shared_session_t = BASETYPE::shared_session_t;
-    using Engine::Server::Connection::Connection;
-private:
+    using BASETYPE::Connection;
+
     // 必须重新该方法，使其返回自己定制的 Session
     virtual shared_session_t session_generator(void) override;
+
 }; // Mahjong::Connection
 
 } // namespace Majong

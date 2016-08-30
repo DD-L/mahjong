@@ -15,10 +15,10 @@ namespace Engine {
 namespace Server {
 
 // 负责整个业务流程
-// 一个用户对应一个 session
+// 一个客户端设备 对应一个 session
 class Session : public std::enable_shared_from_this<Session> {
-// 登录，注册
-// 设备的上下线
+protected:
+    typedef Session                  BASETYPE;
 public:
     typedef std::shared_ptr<Connection> shared_connection_t;
     typedef std::shared_ptr<uuid_t>     shared_uuid_t;

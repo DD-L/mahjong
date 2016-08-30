@@ -22,8 +22,8 @@ class Session : public Engine::Server::Session {
     std::vector<shared_handler_test_t> m_chain_of_responsibility;
     void initial_chain(void);
 public:
-    using shared_connection_t = Engine::Server::Session::shared_connection_t;
-    using shared_uuid_t       = Engine::Server::Session::shared_uuid_t;
+    using shared_connection_t = BASETYPE::shared_connection_t;
+    using shared_uuid_t       = BASETYPE::shared_uuid_t;
     Session(void); //= default;
     virtual ~Session(void);
 

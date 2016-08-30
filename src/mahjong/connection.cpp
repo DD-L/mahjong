@@ -6,9 +6,8 @@
  ************************************************************************/
 
 #include <mahjong/connection.h>
-#include <mahjong/session.h>
+#include <mahjong/session.h> // 自己定制的 Session
 
-#include <engine/log.h>
 using namespace Engine;
 
 namespace Mahjong {
