@@ -22,7 +22,7 @@ namespace Heartbeat {
 
 typedef boost::posix_time::time_duration duration_type;
 
-// Engine::Heartbeat::Detals
+// Engine::Heartbeat::Details
 namespace Details {
 
 class heartbeat {
