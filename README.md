@@ -8,7 +8,7 @@
   * 目标 3：高并发、高性能、高可用。
 
 #### Engine 配置文件
- * [server-config.json](./src/engine/server-config.json)
+ * [server-config.json](https://github.com/DD-L/mahjong/blob/develop/src/engine/server-config.json)
 
 #### Build
 
